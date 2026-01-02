@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <title>Untitled</title>
+    <link rel="stylesheet" href="./style.css">
+
+  </head>
+    
+  <body>
+  <h1>👋 Hello World!</h1>
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阿里山鐵道瑪利歐：便當大衝刺</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #222;
+            font-family: 'Microsoft JhengHei', sans-serif;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            width: 800px;
+            height: 450px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            background: #000;
+        }
+        canvas {
+            display: block;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 20px;
+            color: white;
+            font-size: 20px;
+            text-shadow: 2px 2px 0 #000;
+            pointer-events: none;
+        }
+        #message-box {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            color: #333;
+            text-align: center;
+            min-width: 300px;
+            border: 3px solid #e17055;
+        }
+        #start-screen, #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 10;
+        }
+        h1 { margin-bottom: 10px; color: #81D8D0; text-shadow: 2px 2px #000; }
+        p { margin: 5px 0; max-width: 600px; text-align: center; line-height: 1.6; }
+        .btn {
+            margin-top: 20px;
+            padding: 15px 30px;
+            font-size: 24px;
+            background: #d63031;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .btn:hover { background: #ff7675; }
+        .hidden { display: none !important; }
+        .highlight { color: #ffeaa7; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas" width="800" height="450"></canvas>
+    
+    <div id="ui">
+        <div>🍱 便當收集: <span id="score">0</span></div>
+        <div>🚂 行駛距離: <span id="distance">0</span> m</div>
+    </div>
+
+    <div id="message-box">📍 竹崎車站 - 準備出發！</div>
+
+    <!-- 開始畫面 -->
+    <div id="start-screen">
+        <h1>🚂 阿里山鐵道瑪利歐</h1>
+        <p>從 <span class="highlight">竹崎車站</span> 出發，沿著林鐵攀升！</p>
+        <p>小心 <span class="highlight">觀音瀑布</span> 的落石與三角軌道。</p>
+        <p>目標：收集 <span class="highlight">奮起湖便當</span> 並抵達老街！</p>
+        <button class="btn" onclick="startGame()">開始遊戲</button>
+    </div>
+
+    <!-- 結束畫面 -->
+    <div id="game-over-screen" class="hidden">
+        <h1>💀 旅途結束</h1>
+        <p>你收集了 <span id="final-score" class="highlight">0</span> 個古早味便當</p>
+        <p>抵達地點：<span id="final-location">竹崎車站</span></p>
+        <button class="btn" onclick="resetGame()">重新挑戰</button>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // 遊戲變數
+    let gameRunning = false;
+    let frames = 0;
+    let score = 0;
+    let distance = 0;
+    let speed = 6;
+    let bgGradient;
+    
+    // 遊戲物件
+    let player;
+    let obstacles = [];
+    let bentos = [];
+    
+    // 地標資料 (結合使用者提供的文本)
+    const landmarks = [
+        { dist: 0, name: "📍 竹崎車站", desc: "Tiffany藍木造車站，全台唯一仍在營運！", colorTop: "#81D8D0", colorBot: "#b2bec3" },
+        { dist: 1000, name: "⛰️ 獨立山步道", desc: "全台唯一與鐵道相依的登山步道，開始爬坡！", colorTop: "#55efc4", colorBot: "#00b894" },
+        { dist: 2000, name: "🌊 觀音瀑布", desc: "曾因地震封閉，小心落石！欣賞磅礡氣勢！", colorTop: "#74b9ff", colorBot: "#0984e3" },
+        { dist: 3000, name: "☁️ 石棹步道群", desc: "進入霧之道與茶之道，雲霧繚繞...", colorTop: "#dfe6e9", colorBot: "#636e72" },
+        { dist: 4000, name: "🏁 奮起湖老街", desc: "海拔1400公尺！盡情享用奮起湖便當！", colorTop: "#fab1a0", colorBot: "#e17055" }
+    ];
+
+    let currentLandmarkIndex = 0;
+
+    class Player {
+        constructor() {
+            this.width = 40;
+            this.height = 40;
+            this.x = 100;
+            this.y = 300;
+            this.dy = 0;
+            this.jumpForce = -15;
+            this.gravity = 0.8;
+            this.grounded = false;
+            this.color = "#d63031"; // 瑪利歐紅
+        }
+
+        jump() {
+            if (this.grounded) {
+                this.dy = this.jumpForce;
+                this.grounded = false;
+            }
+        }
+
+        update() {
+            // 重力
+            this.dy += this.gravity;
+            this.y += this.dy;
+
+            // 地板碰撞
+            if (this.y + this.height > 350) {
+                this.y = 350 - this.height;
+                this.dy = 0;
+                this.grounded = true;
+            } else {
+                this.grounded = false;
+            }
+        }
+
+        draw() {
+            // 繪製簡單的瑪利歐風格方塊
+            ctx.fillStyle = this.color;
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+            // 帽子
+            ctx.fillStyle = "#ff7675";
+            ctx.fillRect(this.x - 5, this.y + 5, 50, 10);
+            // 吊帶褲
+            ctx.fillStyle = "#0984e3";
+            ctx.fillRect(this.x, this.y + 25, this.width, 15);
+        }
+    }
+
+    class Obstacle {
+        constructor() {
+            this.width = 40;
+            this.height = 40;
+            this.x = canvas.width;
+            this.y = 310;
+            // 隨機種類：石頭(觀音瀑布落石) 或 三角錐(竹崎車站三角線軌道)
+            this.type = Math.random() > 0.5 ? 'ROCK' : 'TRIANGLE';
+        }
+
+        update() {
+            this.x -= speed;
+        }
+
+        draw() {
+            if (this.type === 'ROCK') {
+                ctx.fillStyle = "#636e72";
+                ctx.beginPath();
+                ctx.arc(this.x + 20, this.y + 20, 20, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = "white";
+                ctx.font = "12px Arial";
+                ctx.fillText("落石", this.x + 8, this.y + 25);
+            } else {
+                ctx.fillStyle = "#fdcb6e";
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y + 40);
+                ctx.lineTo(this.x + 20, this.y);
+                ctx.lineTo(this.x + 40, this.y + 40);
+                ctx.fill();
+                ctx.fillStyle = "black";
+                ctx.fillText("軌道", this.x + 8, this.y + 35);
+            }
+        }
+    }
+
+    class Bento {
+        constructor() {
+            this.size = 30;
+            this.x = canvas.width;
+            this.y = 200 + Math.random() * 100; // 在空中不同高度
+            this.collected = false;
+        }
+
+        update() {
+            this.x -= speed;
+        }
+
+        draw() {
+            if (this.collected) return;
+            ctx.font = "30px Arial";
+            ctx.fillText("🍱", this.x, this.y);
+        }
+    }
+
+    // 初始化遊戲
+    function init() {
+        player = new Player();
+        obstacles = [];
+        bentos = [];
+        score = 0;
+        distance = 0;
+        frames = 0;
+        speed = 6;
+        currentLandmarkIndex = 0;
+        updateUI();
+    }
+
+    function startGame() {
+        document.getElementById('start-screen').classList.add('hidden');
+        document.getElementById('game-over-screen').classList.add('hidden');
+        init();
+        gameRunning = true;
+        gameLoop();
+    }
+
+    function resetGame() {
+        startGame();
+    }
+
+    function updateUI() {
+        document.getElementById('score').innerText = score;
+        document.getElementById('distance').innerText = Math.floor(distance);
+    }
+
+    // 更新背景與訊息 (根據里程)
+    function updateEnvironment() {
+        let currentInfo = landmarks[0];
+        for(let i = 0; i < landmarks.length; i++) {
+            if (distance >= landmarks[i].dist) {
+                currentInfo = landmarks[i];
+                currentLandmarkIndex = i;
+            }
+        }
+
+        // 設定漸層背景
+        bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        bgGradient.addColorStop(0, currentInfo.colorTop);
+        bgGradient.addColorStop(1, currentInfo.colorBot);
+
+        // 更新下方訊息欄
+        const msgBox = document.getElementById('message-box');
+        if (msgBox.innerText !== `${currentInfo.name} - ${currentInfo.desc}`) {
+            msgBox.innerText = `${currentInfo.name} - ${currentInfo.desc}`;
+        }
+    }
+
+    function checkCollision(rect1, rect2) {
+        return (rect1.x < rect2.x + rect2.width &&
+                rect1.x + rect1.width > rect2.x &&
+                rect1.y < rect2.y + rect2.height &&
+                rect1.y + rect1.height > rect2.y);
+    }
+
+    function gameOver() {
+        gameRunning = false;
+        document.getElementById('game-over-screen').classList.remove('hidden');
+        document.getElementById('final-score').innerText = score;
+        document.getElementById('final-location').innerText = landmarks[currentLandmarkIndex].name;
+    }
+
+    // 主遊戲迴圈
+    function gameLoop() {
+        if (!gameRunning) return;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 1. 繪製背景
+        updateEnvironment();
+        ctx.fillStyle = bgGradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 2. 繪製地板 (鐵軌)
+        ctx.fillStyle = "#2d3436";
+        ctx.fillRect(0, 350, canvas.width, 100);
+        // 枕木效果
+        ctx.fillStyle = "#636e72";
+        let sleeperOffset = (frames * speed) % 60;
+        for (let i = 0; i < canvas.width + 60; i += 60) {
+            ctx.fillRect(i - sleeperOffset, 360, 20, 80);
+        }
+        // 鐵軌線
+        ctx.fillStyle = "#b2bec3";
+        ctx.fillRect(0, 370, canvas.width, 10);
+        ctx.fillRect(0, 420, canvas.width, 10);
+
+        // 3. 生成障礙物 (隨機)
+        if (frames % 120 === 0) { // 每2秒左右
+            if (Math.random() > 0.3) obstacles.push(new Obstacle());
+        }
+
+        // 4. 生成便當
+        if (frames % 80 === 0) {
+            bentos.push(new Bento());
+        }
+
+        // 5. 更新與繪製玩家
+        player.update();
+        player.draw();
+
+        // 6. 處理障礙物
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+            obstacles[i].update();
+            obstacles[i].draw();
+
+            // 簡單碰撞偵測 (稍微縮小判定範圍讓遊戲簡單一點)
+            let hitbox = {
+                x: obstacles[i].x + 10, y: obstacles[i].y + 10,
+                width: obstacles[i].width - 20, height: obstacles[i].height - 20
+            };
+            
+            if (checkCollision(player, hitbox)) {
+                gameOver();
+            }
+
+            if (obstacles[i].x < -50) obstacles.splice(i, 1);
+        }
+
+        // 7. 處理便當收集
+        for (let i = bentos.length - 1; i >= 0; i--) {
+            bentos[i].update();
+            bentos[i].draw();
+
+            let bentoBox = { x: bentos[i].x, y: bentos[i].y - 30, width: 30, height: 30 }; // 文字基準線調整
+            
+            if (checkCollision(player, bentoBox)) {
+                score++;
+                bentos.splice(i, 1);
+            } else if (bentos[i].x < -50) {
+                bentos.splice(i, 1);
+            }
+        }
+
+        // 8. 遊戲進度更新
+        frames++;
+        distance += speed / 10;
+        if (frames % 600 === 0) speed += 0.5; // 每隔一段時間加速
+
+        updateUI();
+        requestAnimationFrame(gameLoop);
+    }
+
+    // 事件監聽
+    window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space') {
+            if (gameRunning) player.jump();
+            else if (!document.getElementById('start-screen').classList.contains('hidden') === false) resetGame();
+        }
+    });
+
+    canvas.addEventListener('mousedown', () => {
+        if (gameRunning) player.jump();
+    });
+
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault(); // 防止捲動
+        if (gameRunning) player.jump();
+    });
+
+</script>
+</body>
+</html>
+    <script  src="./script.js"></script>
+
+  </body>
+  
+</html>
